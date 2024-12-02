@@ -3,6 +3,8 @@ subroutine skubo_w(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,hhop,shop,npointstota
 rky,rkz,fk_ex,e_ex,eigval_stack,eigvec_stack)
 implicit real*8 (a-h,o-z)
 
+real(8), dimension(norb, norb, 3*nR) :: B
+
 !out of subroutine arrays 
 dimension Rvec(nR,3)
 dimension R(3,3)
@@ -13,7 +15,8 @@ dimension rky(npointstotal)
 dimension rkz(npointstotal)
 dimension fk_ex(norb_ex,norb_ex)
 dimension e_ex(norb_ex)
-dimension B(norb,3)
+! dimension B(norb,3)
+! dimension B(norb, norb, 3*nR)
 dimension rhop(3,nR,norb,norb)
 dimension eigval_stack(nv_ex + nc_ex,npointstotal)
 dimension eigvec_stack(norb,nv_ex + nc_ex,npointstotal)
@@ -45,8 +48,11 @@ character(100) type_broad
 character(100) file_name_sp
 character(100) file_name_ex
 
-
 pi=acos(-1.0d0)
+
+print *, "Into the skubo_w_!"
+print *, "B dimensions: ", size(B, 1), size(B, 2), size(B, 3)
+
 
 nbands = nv_ex + nc_ex
 
@@ -62,6 +68,7 @@ rkz=rkz*0.52917721067121d0
 e_ex=e_ex/27.211385d0
 eigval_stack=eigval_stack/27.211385d0
 
+print *, "Calling crossproduct"
 call crossproduct(R(1,1),R(1,2),R(1,3),R(2,1), &
 R(2,2),R(2,3),cx,cy,cz)         
 vcell=sqrt(cx**2+cy**2+cz**2)
@@ -94,12 +101,13 @@ allocate (skubo_ex_int(3,3,norb_ex_cut))
 vme_ex=0.0d0
 sigma_w_ex=0.0d0
 skubo_ex_int=0.0d0
-
+print *,  "Calling oscillator strength..."
 call exciton_oscillator_strength(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,hhop,shop,npointstotal,rkx, &
                                  rky,rkz,fk_ex,e_ex,eigval_stack,eigvec_stack,vme,vme_ex,.false.)
 
 
 ! Obtain SP Kubo
+print *,  "Obtaining SP Kubo..."
 do ibz=1,npointstotal
   e(:) = eigval_stack(:, ibz)
           
@@ -110,6 +118,7 @@ end do
 
 
 !fill kubo oscillators of EXCITONS
+print *,  "filling kubo oscillators of EXCITON..."
 do nn=1,norb_ex_cut
   !save oscillator stregths
   do nj=1,3
@@ -122,6 +131,7 @@ end do
 
 
 !excitons
+print *,  "Calculating EXCITONs..."
 do ialpha=1,2
   do ialphap=1,2
     call broad_vector(type_broad,norb_ex_cut,e_ex,skubo_ex_int(ialpha,ialphap,:), &
@@ -129,7 +139,8 @@ do ialpha=1,2
   end do
 end do 
  
-!write frequency dependent conductivity	  
+!write frequency dependent conductivity	 
+print *,  "Writing frequency dependent conductivity..."
 open(50,file=file_name_sp)
 open(60,file=file_name_ex)
 do iw=1,nw
@@ -186,7 +197,8 @@ subroutine exciton_oscillator_strength(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,h
   dimension rkz(npointstotal)
   dimension fk_ex(norb_ex,norb_ex)
   dimension e_ex(norb_ex)
-  dimension B(norb,3)
+  ! dimension B(norb,3)
+  dimension B(norb, norb, 3*nR)
   dimension rhop(3,nR,norb,norb)
   dimension eigval_stack(nv_ex + nc_ex,npointstotal)
   dimension eigvec_stack(norb,nv_ex + nc_ex,npointstotal)
@@ -227,6 +239,7 @@ subroutine exciton_oscillator_strength(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,h
   complex*16 vme_ex 
 
   logical convert_to_au
+  print *,  "Calculating oscillator strength..."
 
 
   if (convert_to_au) then
@@ -274,12 +287,19 @@ subroutine exciton_oscillator_strength(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,h
   !getting some SP variables
   call hoppings_observables_TB(norb,nR,Rvec,shop,hhop,rhop,sderhop,hderhop)
   !11/05/2023 JJEP: fill rhop here. Easier to extend to DFT later 
-  rhop=0.0d0
-  do nn=1,norb
-    do nj=1,3
-      rhop(nj,1,nn,nn)=B(nn,nj)
+  ! rhop = 0.0d0
+  print *, 'Parsing B to rhop...'
+  do nj = 1, nR
+    do nn = 1, norb
+      do nm = 1, norb
+        rhop(1, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 1)
+        rhop(2, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 2)
+        rhop(3, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 3)
+      end do
     end do
   end do
+  print *, 'Done.'
+
   
   !Brillouin zone sampling	  
   !!$OMP PARALLEL DO PRIVATE(rkxp,rkyp,rkzp), &
@@ -417,6 +437,7 @@ complex*16 hderhop,sderhop
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!         
 hderhop=0.0d0
 sderhop=0.0d0
+print *,  "Hoppings observables..."
 do iR=1,nR
   do ialpha=1,norb
   do ialphap=1,ialpha
@@ -727,7 +748,7 @@ implicit real*8 (a-h,o-z)
 cx=ay*bz-az*by
 cy=az*bx-ax*bz
 cz=ax*by-ay*bx     
-  
+print *,  "crossproduct done..."
 return
 end
 

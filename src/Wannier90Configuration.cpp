@@ -227,7 +227,7 @@ namespace xatu {
         systemInfo.motif = motif;                      // Store motif localization data
         systemInfo.hamiltonian = fockMatrices;         // Store Hamiltonian
         systemInfo.filling = filling;                  /* missing on w90 file */
-        // systemInfo.extendedMotif = Rhop;               // plans ?
+        systemInfo.Rhop = Rhop;               // plans ?
 
         // int norbitals_size = motif.n_rows;
         arma::urowvec norbitals = arma::zeros<arma::urowvec>(mSize);

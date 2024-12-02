@@ -425,17 +425,47 @@ void ResultTB::writeAbsorptionSpectrum(){
         R.row(i) = system->bravaisLattice.row(i);
     }
 
-    // arma::mat B = system->motif.cols(0, 2);
-    arma::mat extendedMotif = arma::zeros(system->basisdim, 3);
-    int it = 0;
-    for(int i = 0; i < system->natoms; i++){
-        arma::rowvec atom = system->motif.row(i).subvec(0, 2);
-        int species = system->motif.row(i)(3);
-        for(int j = 0; j < system->orbitals(species); j++){
-            extendedMotif.row(it) = atom; 
-            it++;
+    // const arma::field<arma::cx_cube> extendedMotifField;  // Declare outside
+    arma::field<arma::cx_cube> nonConstRhop = system->Rhop;
+    arma::field<arma::cube> extendedMotifField(nonConstRhop.n_elem); // Initialize for real cubes
+
+    // Determine the total size of the flattened data
+    size_t nFock = extendedMotifField.n_elem;  // Number of elements in the field
+    size_t mSize = extendedMotifField(0).n_rows; // Assuming all cubes in the field have the same size
+    size_t dim3 = extendedMotifField(0).n_slices;
+
+    arma::cube flattenedMotif(mSize, mSize, nFock * dim3, arma::fill::zeros);
+
+    arma::mat extendedMotifMat;                    // Declare outside
+    bool isRhopEmpty = system->Rhop.empty();       // Check condition once
+    //---------------------Wannier90 Calculation------------------------//
+    if (!isRhopEmpty) {
+        for (size_t i = 0; i < nonConstRhop.n_elem; ++i) {
+            extendedMotifField(i) = arma::real(nonConstRhop(i)); // Extract real part
+        }
+        // int nFock = system->Rhop.n_elem;
+        // Flatten the field into a contiguous cube
+        for (size_t i = 0; i < nFock; ++i) {
+            for (size_t j = 0; j < dim3; ++j) {
+                flattenedMotif.slice(i * dim3 + j) = extendedMotifField(i).slice(j);
+            }
+        }
+    } else {
+        //---------------------Default Calculation------------------------//
+        // arma::mat B = system->motif.cols(0, 2);
+        int it = 0;
+        for(int i = 0; i < system->natoms; i++){
+            arma::rowvec atom = system->motif.row(i).subvec(0, 2);
+            int species = system->motif.row(i)(3);
+            for(int j = 0; j < system->orbitals(species); j++){
+                extendedMotifMat.row(it) = atom; 
+                it++;
+            }
         }
     }
+
+    //---------------------------------------------------------------//
+
     arma::cx_cube hhop = system->hamiltonianMatrices;
     arma::cube shop(arma::size(hhop));
     if (system->overlapMatrices.empty()){
@@ -446,6 +476,7 @@ void ResultTB::writeAbsorptionSpectrum(){
     else{
         shop = arma::real(system->overlapMatrices);
     }
+
     int nk = system->nk;
     arma::vec rkx = system->kpoints.col(0);
     arma::vec rky = system->kpoints.col(1);
@@ -454,9 +485,15 @@ void ResultTB::writeAbsorptionSpectrum(){
     arma::mat eigval_sp = exciton->eigvalKStack;
     arma::cx_cube eigvec_sp = exciton->eigvecKStack;
 
-    skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling, 
-             Rvec.memptr(), R.memptr(), extendedMotif.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
-             rky.memptr(), rkz.memptr(), m_eigvec.memptr(), m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
+    if (!isRhopEmpty){
+       skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling, 
+                 Rvec.memptr(), R.memptr(), flattenedMotif.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
+                 rky.memptr(), rkz.memptr(), m_eigvec.memptr(), m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
+    } else {
+        skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling, 
+                 Rvec.memptr(), R.memptr(), extendedMotifMat.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
+                 rky.memptr(), rkz.memptr(), m_eigvec.memptr(), m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
+    }
 }
 
 /**
