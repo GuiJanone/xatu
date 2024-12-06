@@ -1,9 +1,13 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 subroutine skubo_w(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,hhop,shop,npointstotal,rkx, &
 rky,rkz,fk_ex,e_ex,eigval_stack,eigvec_stack)
+
+
 implicit real*8 (a-h,o-z)
 
-real(8), dimension(norb, norb, 3*nR) :: B
+dimension B(3*nR*norb*norb)  ! 1D array received from C++
+
+dimension B_reshaped(3, nR, norb, norb)
 
 !out of subroutine arrays 
 dimension Rvec(nR,3)
@@ -16,7 +20,7 @@ dimension rkz(npointstotal)
 dimension fk_ex(norb_ex,norb_ex)
 dimension e_ex(norb_ex)
 ! dimension B(norb,3)
-! dimension B(norb, norb, 3*nR)
+! dimension B(3*nR, norb, norb)
 dimension rhop(3,nR,norb,norb)
 dimension eigval_stack(nv_ex + nc_ex,npointstotal)
 dimension eigvec_stack(norb,nv_ex + nc_ex,npointstotal)
@@ -33,7 +37,6 @@ allocatable wp(:)
 allocatable skubo_ex_int(:,:,:)
 allocatable sigma_w_ex(:,:,:)
 
-
 complex*16 hhop
 complex*16 fk_ex
 complex*16 eigvec_stack
@@ -44,6 +47,8 @@ complex*16 skubo_ex_int
 complex*16 sigma_w_sp
 complex*16 sigma_w_ex
 
+integer :: i, j, k, l
+
 character(100) type_broad
 character(100) file_name_sp
 character(100) file_name_ex
@@ -51,8 +56,23 @@ character(100) file_name_ex
 pi=acos(-1.0d0)
 
 print *, "Into the skubo_w_!"
-print *, "B dimensions: ", size(B, 1), size(B, 2), size(B, 3)
+print *, "Size of B:", size(B)
+print *, "Checking if B is accessible. B(1): ", B(1)
 
+! Reshape the 1D array into a 4D array manually
+    do i = 1, 3
+        do j = 1, nR
+            do k = 1, norb
+                do l = 1, norb
+                    print *, "Reshaping array index: ", i, j, k
+                    B_reshaped(i, j, k, l) = B((i-1)*nR*norb*norb + (j-1)*norb*norb + (k-1)*norb + l)
+                end do
+            end do
+        end do
+    end do
+
+! Now use B_reshaped as a 4D array
+print *, "B_reshaped(1,1,1,1): ", B_reshaped(1, 1, 1, 1)
 
 nbands = nv_ex + nc_ex
 
@@ -292,9 +312,9 @@ subroutine exciton_oscillator_strength(nR,norb,norb_ex,nv_ex,nc_ex,nv,Rvec,R,B,h
   do nj = 1, nR
     do nn = 1, norb
       do nm = 1, norb
-        rhop(1, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 1)
-        rhop(2, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 2)
-        rhop(3, nj, nm, nn) = B(nn, nm, (nj - 1) * 3 + 3)
+        rhop(1, nj, nm, nn) = B(1, nj, nm, nn)
+        rhop(2, nj, nm, nn) = B(2, nj, nm, nn)
+        rhop(3, nj, nm, nn) = B(3, nj, nm, nn)
       end do
     end do
   end do

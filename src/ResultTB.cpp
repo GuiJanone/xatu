@@ -427,27 +427,28 @@ void ResultTB::writeAbsorptionSpectrum(){
 
     // const arma::field<arma::cx_cube> extendedMotifField;  // Declare outside
     arma::field<arma::cx_cube> nonConstRhop = system->Rhop;
-    arma::field<arma::cube> extendedMotifField(nonConstRhop.n_elem); // Initialize for real cubes
 
-    // Determine the total size of the flattened data
-    size_t nFock = extendedMotifField.n_elem;  // Number of elements in the field
-    size_t mSize = extendedMotifField(0).n_rows; // Assuming all cubes in the field have the same size
-    size_t dim3 = extendedMotifField(0).n_slices;
 
-    arma::cube flattenedMotif(mSize, mSize, nFock * dim3, arma::fill::zeros);
+    arma::Cube<double> extendedMotifFull(3, nR, norb * norb, arma::fill::zeros); // Create a flattened version
 
-    arma::mat extendedMotifMat;                    // Declare outside
+    arma::mat extendedMotif;                    // Declare outside
     bool isRhopEmpty = system->Rhop.empty();       // Check condition once
     //---------------------Wannier90 Calculation------------------------//
     if (!isRhopEmpty) {
-        for (size_t i = 0; i < nonConstRhop.n_elem; ++i) {
-            extendedMotifField(i) = arma::real(nonConstRhop(i)); // Extract real part
-        }
-        // int nFock = system->Rhop.n_elem;
-        // Flatten the field into a contiguous cube
-        for (size_t i = 0; i < nFock; ++i) {
-            for (size_t j = 0; j < dim3; ++j) {
-                flattenedMotif.slice(i * dim3 + j) = extendedMotifField(i).slice(j);
+        // Iterate over Rhop to populate extendedMotif
+        for (int iFock = 0; iFock < nR; iFock++) {
+            arma::cx_cube currentCube = system->Rhop(iFock); // Extract current cx_cube from Rhop
+
+            // Iterate over slices (3 slices: 0, 1, 2)
+            for (int slice = 0; slice < 3; slice++) {
+                arma::mat realPart = arma::real(currentCube.slice(slice)); // Extract real part of the slice
+
+                for (int row = 0; row < norb; row++) {
+                    for (int col = 0; col < norb; col++) {
+                        int flattenedIndex = col + row * norb;
+                        extendedMotifFull(slice, iFock, flattenedIndex) = realPart(row, col);
+                    }
+                }
             }
         }
     } else {
@@ -458,11 +459,17 @@ void ResultTB::writeAbsorptionSpectrum(){
             arma::rowvec atom = system->motif.row(i).subvec(0, 2);
             int species = system->motif.row(i)(3);
             for(int j = 0; j < system->orbitals(species); j++){
-                extendedMotifMat.row(it) = atom; 
+                extendedMotif.row(it) = atom; 
                 it++;
             }
         }
     }
+    // Flatten into column-major order for Fortran
+    arma::vec flattenedMotif = arma::vectorise(extendedMotifFull);
+    std::cout << "Size of flattenedMotif: " << flattenedMotif.n_elem << std::endl;
+    std::cout << "Some elements of flattenedMotif: " << flattenedMotif(1)
+                                                     <<" " << flattenedMotif(2)
+                                                     <<" " << flattenedMotif(3)<< std::endl;
 
     //---------------------------------------------------------------//
 
@@ -486,12 +493,14 @@ void ResultTB::writeAbsorptionSpectrum(){
     arma::cx_cube eigvec_sp = exciton->eigvecKStack;
 
     if (!isRhopEmpty){
-       skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling, 
-                 Rvec.memptr(), R.memptr(), flattenedMotif.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
-                 rky.memptr(), rkz.memptr(), m_eigvec.memptr(), m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
+        skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling,
+                 Rvec.memptr(), R.memptr(), flattenedMotif.memptr(),
+                 hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
+                 rky.memptr(), rkz.memptr(), m_eigvec.memptr(),
+                 m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
     } else {
         skubo_w_(&nR, &norb, &norb_ex, &nv, &nc, &filling, 
-                 Rvec.memptr(), R.memptr(), extendedMotifMat.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
+                 Rvec.memptr(), R.memptr(), extendedMotif.memptr(), hhop.memptr(), shop.memptr(), &nk, rkx.memptr(),
                  rky.memptr(), rkz.memptr(), m_eigvec.memptr(), m_eigval.memptr(), eigval_sp.memptr(), eigvec_sp.memptr());
     }
 }
